@@ -2232,9 +2232,9 @@ FastbootCmdsInit (VOID)
   /* Clear allocated buffer */
   gBS->SetMem ((VOID *)FastBootBuffer, MaxUSBBufferSize , 0x0);
   DEBUG ((EFI_D_VERBOSE,
-                  "Fastboot Buffer Size allocated: %ld\n", MaxBufferSize));
+                  "Fastboot Buffer Size allocated: %ld\n", MaxUSBBufferSize));
 
-  MaxBufferSize = (CheckRootDeviceType () == NAND) ?
+  MaxUSBBufferSize = (CheckRootDeviceType () == NAND) ?
                               MaxUSBBufferSize : MaxUSBBufferSize / 2;
 
   FastbootCommandSetup ((VOID *)FastBootBuffer, MaxUSBBufferSize);
