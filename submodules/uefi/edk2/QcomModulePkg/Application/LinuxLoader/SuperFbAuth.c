@@ -11,6 +11,9 @@
 
 #define SFB_PASSWORD_PATH L"\\efisp\\menu_password"
 #define SFB_PASSWORD_ATTEMPTS 3
+#define SFB_AUTH_MESSAGE_PATH L"\\efisp\\auth_message"
+#define SFB_AUTH_MESSAGE_CHARS 80
+#define SFB_AUTH_MESSAGE_BYTES (SFB_AUTH_MESSAGE_CHARS * 3)
 
 /* Qualcomm's GPT-record protocol has no standalone public protocol header. */
 extern EFI_GUID gEfiPartitionRecordGuid;
@@ -21,6 +24,44 @@ STATIC BOOLEAN mUnlocked;
 STATIC UINTN mFailures;
 STATIC CHAR8 mSalt[32];
 STATIC UINT8 mDigest[32];
+STATIC CHAR16 mAuthMessage[SFB_AUTH_MESSAGE_CHARS + 1];
+
+/* Decode a bounded, single-line UTF-8 message to the console's UCS-2. Reject
+ * malformed encodings, surrogates, control/bidi codes and supplementary glyphs. */
+STATIC BOOLEAN
+SfbDecodeAuthMessage (CONST UINT8 *Bytes, UINTN Size, CHAR16 *Out)
+{
+  UINTN At = 0, Count = 0;
+  if (Out == NULL) return FALSE;
+  Out[0] = L'\0';
+  /* Reject untrusted lengths before inspecting even the final input byte. */
+  if (Size > SFB_AUTH_MESSAGE_BYTES + 1 || (Size != 0 && Bytes == NULL)) return FALSE;
+  if (Size > 0 && Bytes[Size - 1] == '\n') Size--;
+  if (Size > SFB_AUTH_MESSAGE_BYTES) return FALSE;
+  while (At < Size) {
+    UINT32 Ch = Bytes[At++];
+    if (Ch >= 0xC2 && Ch <= 0xDF) {
+      if (At >= Size || (Bytes[At] & 0xC0) != 0x80) goto invalid;
+      Ch = ((Ch & 0x1F) << 6) | (Bytes[At++] & 0x3F);
+    } else if (Ch >= 0xE0 && Ch <= 0xEF) {
+      if (At + 1 >= Size || (Bytes[At] & 0xC0) != 0x80 ||
+          (Bytes[At + 1] & 0xC0) != 0x80) goto invalid;
+      Ch = ((Ch & 0x0F) << 12) | ((Bytes[At] & 0x3F) << 6) | (Bytes[At + 1] & 0x3F);
+      At += 2;
+      if (Ch < 0x800) goto invalid;
+    } else if (Ch >= 0x80) goto invalid;
+    if (Ch < 0x20 || (Ch >= 0x7F && Ch <= 0x9F) ||
+        (Ch >= 0xD800 && Ch <= 0xDFFF) || Ch == 0x2028 || Ch == 0x2029 ||
+        (Ch >= 0x202A && Ch <= 0x202E) || (Ch >= 0x2066 && Ch <= 0x2069) ||
+        Ch == 0xFEFF || Ch >= 0xFFF0 || Count >= SFB_AUTH_MESSAGE_CHARS) goto invalid;
+    Out[Count++] = (CHAR16)Ch;
+  }
+  Out[Count] = L'\0';
+  return TRUE;
+invalid:
+  Out[0] = L'\0';
+  return FALSE;
+}
 
 /* Use the platform's internal-storage partition table, never a scan of FAT
  * labels, USB media, BOOTENTRIES or efisp.fat. Ambiguous identities fail closed. */
@@ -66,6 +107,7 @@ SfbAuthInitialize (VOID)
   EFI_HANDLE Volume;
   EFI_FILE_PROTOCOL *Root = NULL;
   CHAR8 Buffer[SFB_PASSWORD_RECORD_BYTES + 2];
+  UINT8 Message[SFB_AUTH_MESSAGE_BYTES + 2];
   UINTN Bytes = 0;
   EFI_STATUS Status;
   if (mInitialized) return;
@@ -73,19 +115,32 @@ SfbAuthInitialize (VOID)
   if (EFI_ERROR (SfbGetPersistVolume (&Volume)) ||
       EFI_ERROR (SfbOpenVolumeRoot (Volume, &Root)) || Root == NULL) return;
   Status = SfbReadFileBytes (Root, SFB_PASSWORD_PATH, Buffer, sizeof (Buffer), &Bytes);
-  Root->Close (Root);
   /* Only a genuinely absent file disables the gate. Corruption or I/O
    * failures do not turn a configured password into unrestricted access. */
   if (Status == EFI_NOT_FOUND) mUnlocked = TRUE;
   if (!EFI_ERROR (Status))
     mConfigured = SfbPasswordParse (Buffer, Bytes, mSalt, mDigest);
   ZeroMem (Buffer, sizeof (Buffer));
+  Bytes = 0;
+  if (!EFI_ERROR (SfbReadFileBytes (Root, SFB_AUTH_MESSAGE_PATH, Message, sizeof (Message), &Bytes)))
+    SfbDecodeAuthMessage (Message, Bytes, mAuthMessage);
+  Root->Close (Root);
 }
 
 BOOLEAN
 SfbAuthIsUnlocked (VOID)
 {
   return mUnlocked;
+}
+
+STATIC VOID
+SfbShowAuthScreen (BOOLEAN UnsupportedCharacters)
+{
+  /* Render the original text even if the console reports missing glyphs;
+   * available glyphs remain readable and firmware can draw placeholders. */
+  SfbBeginScreen (L"Superfastboot Authentication", mAuthMessage);
+  if (UnsupportedCharacters)
+    Print (L"Some characters may appear as boxes. Try English text.\r\n\r\n");
 }
 
 BOOLEAN
@@ -96,15 +151,22 @@ SfbAuthRequest (VOID)
   UINTN Cursor = 0;
   UINTN Index;
   SFB_KEY Key;
+  BOOLEAN UnsupportedCharacters = FALSE;
   if (mUnlocked) return TRUE;
   if (!mConfigured || mFailures >= SFB_PASSWORD_ATTEMPTS) return FALSE;
+  if (mAuthMessage[0] != L'\0' &&
+      (gST == NULL || gST->ConOut == NULL || gST->ConOut->TestString == NULL ||
+       EFI_ERROR (gST->ConOut->TestString (gST->ConOut, mAuthMessage))))
+    UnsupportedCharacters = TRUE;
   ZeroMem (Input, sizeof (Input));
   /* Long numeric passwords must not race the default five-minute watchdog. */
   gBS->SetWatchdogTimer (0, 0, 0, NULL);
-  SfbShowEnteringScreen (L"Superfastboot Authentication");
+  SfbShowAuthScreen (UnsupportedCharacters);
+  SfbDebounceMenuExit ();
   while (mFailures < SFB_PASSWORD_ATTEMPTS) {
     UINTN Start = SfbWindowStart (Cursor, 13, SFB_VISIBLE_ROWS);
-    SfbBeginScreen (L"Enter Superfastboot", L"Volume: choose. Power: confirm.");
+    SfbShowAuthScreen (UnsupportedCharacters);
+    Print (L"Volume: choose. Power: confirm.\r\n\r\n");
     Print (L"Password: ");
     for (Index = 0; Index < Length; Index++) Print (L"*");
     Print (L"_ (%u/%u)", (UINT32)Length, (UINT32)SFB_PIN_MAX_DIGITS);

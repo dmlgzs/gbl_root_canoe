@@ -15,6 +15,12 @@ const i18n = {
   zh: {
     pageTitle: "假回锁 - BL Flasher",
     passwordTitle: "Superfastboot 密码保护",
+    authMessageTitle: "密码页自定义文字",
+    authMessageHint: "最多 80 个字符，显示在 Superfastboot Authentication 下方。中文取决于固件字库，英文兼容性更好。留空保存可清除，下次开机生效。",
+    authMessageSave: "保存文字",
+    authMessageSaved: "文字已保存，下次开机生效。",
+    authMessageInvalid: "请输入最多 80 个普通字符，不能包含换行、控制字符或表情符号。",
+    authMessageFailed: "文字保存失败",
     passwordHint: "设置 6–64 位数字密码后，进入 Superfastboot 需要验证；未设置密码时无需验证。未通过验证或本次开机输错三次，只能启动安卓。正常启动安卓和输入超时均无需密码。设置在下次开机生效。",
     passwordNew: "新密码",
     passwordRepeat: "再次输入",
@@ -86,6 +92,12 @@ const i18n = {
   en: {
     pageTitle: "Fake Lock - BL Flasher",
     passwordTitle: "Superfastboot Password Protection",
+    authMessageTitle: "Custom authentication text",
+    authMessageHint: "Up to 80 characters below Superfastboot Authentication. Chinese requires firmware font support; English is more compatible. Save empty text to clear. Effective next boot.",
+    authMessageSave: "Save text",
+    authMessageSaved: "Text saved. Effective next boot.",
+    authMessageInvalid: "Use up to 80 normal characters, without line breaks, controls or emoji.",
+    authMessageFailed: "Failed to save text",
     passwordHint: "Set a 6–64 digit password to require verification before entering Superfastboot. No password means no verification. Failed verification or three errors in one boot permits only Android. Normal Android boot and input timeout need no password. Changes take effect next boot.",
     passwordNew: "New password",
     passwordRepeat: "Repeat password",
@@ -183,7 +195,11 @@ const elements = {
   passwordStatus: document.getElementById("passwordStatus"),
   passwordMessage: document.getElementById("passwordMessage"),
   savePasswordButton: document.getElementById("savePasswordButton"),
-  clearPasswordButton: document.getElementById("clearPasswordButton")
+  clearPasswordButton: document.getElementById("clearPasswordButton"),
+  authMessageForm: document.getElementById("authMessageForm"),
+  authMessageInput: document.getElementById("authMessageInput"),
+  saveAuthMessageButton: document.getElementById("saveAuthMessageButton"),
+  authMessageResult: document.getElementById("authMessageResult")
 };
 
 function applyLanguage(lang) {
@@ -334,6 +350,7 @@ function renderStatus(status) {
   elements.clearLogButton.disabled = run;
   elements.savePasswordButton.disabled = run || !state.moduleDir;
   elements.clearPasswordButton.disabled = run || !state.moduleDir;
+  elements.saveAuthMessageButton.disabled = run || !state.moduleDir;
   elements.passwordStatus.textContent = t.passwordStates[status.PASSWORD_STATE] || t.passwordStates.unknown;
   renderTable(cur, tar);
 }
@@ -470,6 +487,24 @@ function clearLog() {
   manualRefresh();
 }
 
+function saveAuthMessage(event) {
+  event.preventDefault();
+  const t = i18n[state.lang];
+  const message = elements.authMessageInput.value;
+  if (message.length > 80 || /[\u0000-\u001f\u007f-\u009f\u2028-\u202e\u2066-\u2069\ud800-\udfff\ufeff\ufff0-\uffff]/.test(message)) {
+    elements.authMessageResult.textContent = t.authMessageInvalid;
+    return;
+  }
+  try {
+    const out = parseKeyValueOutput(runScript("set-auth-message", message));
+    elements.authMessageResult.textContent = out.AUTH_MESSAGE_SAVED === "1" ? t.authMessageSaved
+      : out.AUTH_MESSAGE_ERROR === "invalid" ? t.authMessageInvalid
+      : (t.passwordErrors[out.AUTH_MESSAGE_ERROR] || t.authMessageFailed);
+  } catch {
+    elements.authMessageResult.textContent = t.authMessageFailed;
+  }
+}
+
 function savePassword(event) {
   event.preventDefault();
   const t = i18n[state.lang];
@@ -530,6 +565,7 @@ async function init() {
     state.moduleDir = info.moduleDir;
     state.scriptPath = `${state.moduleDir}/bin/bl_flasher.sh`;
     refreshStatus();
+    elements.authMessageInput.value = runScript("get-auth-message");
   } catch (e) {
     elements.stateChip.textContent = state.lang === "zh" ? "WebUI 初始化失败" : "WebUI Init Failed";
     elements.stateChip.className = "chip chip-danger";
@@ -539,11 +575,13 @@ async function init() {
     elements.clearLogButton.disabled = true;
     elements.savePasswordButton.disabled = true;
     elements.clearPasswordButton.disabled = true;
+    elements.saveAuthMessageButton.disabled = true;
     return;
   }
 
   elements.refreshButton.addEventListener("click", manualRefresh);
   elements.passwordForm.addEventListener("submit", savePassword);
+  elements.authMessageForm.addEventListener("submit", saveAuthMessage);
   elements.clearPasswordButton.addEventListener("click", clearPassword);
   elements.flashButton.addEventListener("click", () => openConfirmModal("flash"));
   elements.bdsToolsButton.addEventListener("click", () => openConfirmModal("bds-tools"));

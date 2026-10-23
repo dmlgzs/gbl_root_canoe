@@ -95,6 +95,12 @@ Common commands include:
   - `fastboot reboot recovery`
   - `fastboot reboot`
 
+#### Custom authentication text
+
+Use the module WebUI's custom authentication text field to save up to 80 characters below `Superfastboot Authentication`, effective next boot. Save an empty field to clear. The single-line UTF-8 file is `/mnt/vendor/persist/efisp/auth_message`, separate from credentials and preserved during module updates. Editing text does not change the password.
+
+English and common Chinese text can be decoded; emoji, line breaks and control characters are unsupported. Chinese rendering depends on firmware fonts. This BDS bundles no Chinese font, so glyph support is not guaranteed. If the console reports unsupported glyphs, the original text is still rendered with firmware placeholders, and an English notice appears below it without affecting authentication.
+
 ### 5. File Reference
 1. `BDS.efi`: The superfastboot BDS, flashed raw to the `efisp` partition.
 2. `boot.efi` / `ABL.efi`: The cracked ABL with fake re-lock (the module names it `boot.efi`; the toolkit names it `ABL.efi`), placed on `persist` under `efisp/`.

@@ -94,6 +94,12 @@
   - `fastboot reboot recovery`
   - `fastboot reboot`
 
+#### 密码页自定义文字
+
+在模块 WebUI 的“密码页自定义文字”中保存最多 80 个字符，下次开机会显示在 `Superfastboot Authentication` 标题下。留空保存可清除。配置以单行 UTF-8 存放在 `/mnt/vendor/persist/efisp/auth_message`，与密码文件分开，修改文字不会修改密码，模块更新会保留它。
+
+支持英文和常见中文的编码，不支持表情符号、换行和控制字符。中文显示取决于设备固件字库，本 BDS 没有内置中文字库，不能保证所有设备能显示汉字；检测到缺字时仍显示原文字（缺字由固件显示为方块等占位符），并在下方提示改用英文，不影响密码验证。英文兼容性更好。
+
 ### 5. 文件说明
 1. `BDS.efi`：superfastboot BDS，以原始方式刷入 `efisp` 分区。
 2. `boot.efi` / `ABL.efi`：带假回锁的破解 ABL（模块中名为 `boot.efi`；toolkit 中名为 `ABL.efi`），存放在 `persist` 的 `efisp/` 下。

@@ -9,6 +9,14 @@ EFI_GUID gEfiBlockIoProtocolGuid = {2, 0, 0, {0}};
 struct StoragePartInfo Ptable[MAX_LUNS];
 static EFI_BOOT_SERVICES Services;
 EFI_BOOT_SERVICES *gBS = &Services;
+static EFI_SYSTEM_TABLE System;
+static EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL Console;
+EFI_SYSTEM_TABLE *gST = &System;
+static BOOLEAN FontSupported = TRUE;
+static CONST CHAR16 *DisplayedMessage;
+static BOOLEAN GlyphWarningDisplayed;
+static const CHAR8 *MessageFile;
+static EFI_STATUS MessageReadStatus;
 static EFI_PARTITION_ENTRY Record;
 static EFI_BLOCK_IO_MEDIA Media;
 static EFI_BLOCK_IO_PROTOCOL BlockIo;
@@ -25,7 +33,11 @@ INTN EFIAPI StrCmp (CONST CHAR16 *A, CONST CHAR16 *B) {
   while (*A != 0 && *A == *B) { A++; B++; }
   return (INTN)*A - (INTN)*B;
 }
-UINTN EFIAPI Print (CONST CHAR16 *Format, ...) { return 0; }
+UINTN EFIAPI Print (CONST CHAR16 *Format, ...) {
+  if (StrCmp (Format, L"Some characters may appear as boxes. Try English text.\r\n\r\n") == 0)
+    GlyphWarningDisplayed = TRUE;
+  return 0;
+}
 UINT32 GetMaxLuns (VOID) { return 1; }
 BOOLEAN SfbIsExt4Volume (EFI_HANDLE Volume) { return TRUE; }
 static EFI_STATUS EFIAPI Protocol (EFI_HANDLE Handle, EFI_GUID *Guid, VOID **Out) {
@@ -39,13 +51,25 @@ static EFI_STATUS EFIAPI Watchdog (UINTN Timeout, UINT64 Code, UINTN Bytes, CHAR
 EFI_STATUS SfbOpenVolumeRoot (EFI_HANDLE Volume, EFI_FILE_PROTOCOL **Out) { *Out = &Root; return EFI_SUCCESS; }
 EFI_STATUS SfbReadFileBytes (EFI_FILE_PROTOCOL *File, CONST CHAR16 *Path,
                             VOID *Out, UINTN Capacity, UINTN *Bytes) {
+  if (StrCmp (Path, SFB_AUTH_MESSAGE_PATH) == 0) {
+    if (EFI_ERROR (MessageReadStatus)) return MessageReadStatus;
+    if (MessageFile == NULL) return EFI_NOT_FOUND;
+    *Bytes = strlen (MessageFile) < Capacity ? strlen (MessageFile) : Capacity;
+    memcpy (Out, MessageFile, *Bytes);
+    return EFI_SUCCESS;
+  }
   if (FileLength == 0) return EFI_NOT_FOUND;
   *Bytes = FileLength < Capacity ? FileLength : Capacity;
   memcpy (Out, FileBytes, *Bytes);
   return EFI_SUCCESS;
 }
 VOID SfbShowEnteringScreen (CONST CHAR16 *Text) {}
-VOID SfbBeginScreen (CONST CHAR16 *Title, CONST CHAR16 *Subtitle) {}
+VOID SfbBeginScreen (CONST CHAR16 *Title, CONST CHAR16 *Subtitle) {
+  if (StrCmp (Title, L"Superfastboot Authentication") == 0) DisplayedMessage = Subtitle;
+}
+static EFI_STATUS EFIAPI TestString (EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This, CHAR16 *Text) {
+  return FontSupported ? EFI_SUCCESS : EFI_UNSUPPORTED;
+}
 VOID SfbDebounceMenuExit (VOID) {}
 VOID SfbDrawRow (BOOLEAN Selected, CONST CHAR16 *Marker, CONST CHAR16 *Text) {}
 UINTN SfbWindowStart (UINTN Cursor, UINTN Count, UINTN Rows) { return 0; }
@@ -60,6 +84,11 @@ static void reset (const char *Pin) {
   UINTN Index;
   mInitialized = mConfigured = mUnlocked = FALSE;
   mFailures = 0;
+  ZeroMem (mAuthMessage, sizeof (mAuthMessage));
+  MessageFile = NULL; FontSupported = TRUE; DisplayedMessage = NULL;
+  GlyphWarningDisplayed = FALSE;
+  MessageReadStatus = EFI_SUCCESS;
+  System.ConOut = &Console; Console.TestString = TestString;
   KeyAt = KeyCount = TestCursor = 0;
   memset (Ptable, 0, sizeof (Ptable));
   Ptable[0].MaxHandles = 1;
@@ -164,6 +193,54 @@ int main (void) {
   SfbAuthInitialize ();
   choose (11);
   CHECK (!SfbAuthRequest () && mFailures == 0); /* Empty confirmation. */
+  {
+    CHAR16 Text[SFB_AUTH_MESSAGE_CHARS + 1];
+    const UINT8 Chinese[] = {0xE4,0xBD,0xA0,0xE5,0xA5,0xBD};
+    const UINT8 Bad[][4] = {{0xC0,0xAF,0,0}, {0xED,0xA0,0x80,0}, {0xF0,0x9F,0x98,0x80}};
+    CHECK (SfbDecodeAuthMessage (Chinese, sizeof (Chinese), Text));
+    CHECK (Text[0] == 0x4F60 && Text[1] == 0x597D && Text[2] == 0);
+    for (UINTN Index = 0; Index < 3; Index++) CHECK (!SfbDecodeAuthMessage (Bad[Index], 4, Text));
+    CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"bad\rtext", 8, Text));
+    reset ("123456"); MessageFile = "Owner: test@example.com";
+    SfbAuthInitialize (); submit ("123456");
+    CHECK (SfbAuthRequest () && StrCmp (DisplayedMessage, L"Owner: test@example.com") == 0);
+    CHECK (!GlyphWarningDisplayed);
+    reset ("123456"); MessageFile = "\xE4\xBD\xA0\xE5\xA5\xBD";
+    FontSupported = FALSE;
+    SfbAuthInitialize (); submit ("123456");
+    CHECK (SfbAuthRequest () && DisplayedMessage == mAuthMessage && GlyphWarningDisplayed);
+    CHECK (DisplayedMessage[0] == 0x4F60); /* Original text is still rendered. */
+    reset ("123456"); MessageFile = "Owner: test@example.com";
+    Console.TestString = NULL;
+    SfbAuthInitialize (); submit ("123456");
+    CHECK (SfbAuthRequest () && StrCmp (DisplayedMessage, L"Owner: test@example.com") == 0);
+    CHECK (GlyphWarningDisplayed);
+    {
+      UINT8 LongText[243];
+      memset (LongText, 'x', sizeof (LongText));
+      CHECK (SfbDecodeAuthMessage (LongText, 80, Text) && Text[80] == 0);
+      CHECK (!SfbDecodeAuthMessage (LongText, 81, Text) && Text[0] == 0);
+      CHECK (!SfbDecodeAuthMessage (LongText, sizeof (LongText), Text));
+      CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"x", (UINTN)-1, Text));
+      CHECK (!SfbDecodeAuthMessage (NULL, 1, Text));
+      CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"x", 1, NULL));
+      CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"a\0b", 3, Text));
+      CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"\x1b[2J", 4, Text));
+      CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"\xEF\xBF\xB0", 3, Text));
+      CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"\xE4\xBD", 2, Text));
+      CHECK (SfbDecodeAuthMessage ((CONST UINT8 *)"%s%n%a", 6, Text));
+      CHECK (StrCmp (Text, L"%s%n%a") == 0);
+      reset ("123456"); MessageFile = "bad\rtext";
+      SfbAuthInitialize (); submit ("123456");
+      CHECK (SfbAuthRequest () && DisplayedMessage[0] == 0 && !GlyphWarningDisplayed);
+      reset ("123456"); MessageFile = "%s%n%a";
+      SfbAuthInitialize (); submit ("123456");
+      CHECK (SfbAuthRequest () && StrCmp (DisplayedMessage, L"%s%n%a") == 0);
+      reset ("123456"); MessageFile = "optional"; MessageReadStatus = EFI_DEVICE_ERROR;
+      SfbAuthInitialize (); submit ("123456");
+      CHECK (SfbAuthRequest () && DisplayedMessage[0] == 0 && !GlyphWarningDisplayed);
+    }
+  }
   puts ("UEFI authentication: no-password bypass, invalid-file denial, storage identity, leading zeros, 64 digits, delete, short-password failures, three-error lockout, empty input, cancel and timeout passed");
   return 0;
 }

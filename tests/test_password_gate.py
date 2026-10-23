@@ -156,6 +156,21 @@ def main():
         assert "PASSWORD_STATE=missing" in run(bash, shell_path, "status", env=env)
         password_file.write_bytes(b"123456")
         assert "PASSWORD_STATE=invalid" in run(bash, shell_path, "status", env=env)
+        message_file = boot_root / "auth_message"
+        for message in ("Owner: test@example.com", "Chinese: \u4f60\u597d", "\u4e2d" * 80, "literal $() `cmd` ' %s"):
+            assert "AUTH_MESSAGE_SAVED=1" in run(bash, shell_path, "set-auth-message", message, env=env)
+            assert message_file.read_bytes() == message.encode("utf-8")
+            assert run(bash, shell_path, "get-auth-message", env=env) == message
+        old_message = message_file.read_bytes()
+        for message in ("x" * 81, "bad\ttext", "\u4e2d" * 81):
+            output = subprocess.run([bash, shell_path, "set-auth-message", message], text=True,
+                                    encoding="utf-8", capture_output=True, env=env)
+            assert output.returncode != 0 and "AUTH_MESSAGE_ERROR=invalid" in output.stdout
+            assert message_file.read_bytes() == old_message
+        assert "AUTH_MESSAGE_SAVED=1" in run(bash, shell_path, "set-auth-message", "", env=env)
+        assert not message_file.exists()
+        assert password_file.read_bytes() == b"123456"  # Text editing is independent of credentials.
+        print("Custom text: UTF-8 round trip, size/control validation, literal shell characters and clearing passed")
         print("Module actions: salted storage, leading zeros, variable lengths, validation, flash lock, status, clear and no plaintext logs passed")
 
 

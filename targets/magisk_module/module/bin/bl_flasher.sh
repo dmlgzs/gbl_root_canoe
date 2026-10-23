@@ -92,6 +92,7 @@ BY_NAME_DIR="/dev/block/by-name"
 PERSIST_MNT="/mnt/vendor/persist"
 EFISP_DIR="$PERSIST_MNT/efisp"
 PASSWORD_FILE="$EFISP_DIR/menu_password"
+AUTH_MESSAGE_FILE="$EFISP_DIR/auth_message"
 BDS_EFI="$MODDIR/BDS.efi"
 IMAGE_NAMES="abl"
 LOG_FILE="$RUNTIME_DIR/flash.log"
@@ -204,6 +205,43 @@ set_password() (
   fi
   password_tmp=
   emit 'PASSWORD_SAVED=1'
+)
+
+get_auth_message() {
+  persist_mounted && [ -f "$AUTH_MESSAGE_FILE" ] && [ ! -L "$AUTH_MESSAGE_FILE" ] || return 0
+  [ "$(wc -c < "$AUTH_MESSAGE_FILE")" -le 240 ] || return 0
+  cat "$AUTH_MESSAGE_FILE"
+}
+
+set_auth_message() (
+  auth_text=$1
+  auth_bytes=$(printf '%s' "$auth_text" | wc -c)
+  auth_chars=$(printf '%s' "$auth_text" | LC_ALL=C tr -d '\200-\277' | wc -c)
+  [ "$auth_bytes" -le 240 ] && [ "$auth_chars" -le 80 ] || { emit 'AUTH_MESSAGE_ERROR=invalid'; exit 1; }
+  if printf '%s' "$auth_text" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    emit 'AUTH_MESSAGE_ERROR=invalid'; exit 1
+  fi
+  persist_mounted || { emit 'AUTH_MESSAGE_ERROR=unmounted'; exit 1; }
+  [ -d "$EFISP_DIR" ] && [ ! -L "$EFISP_DIR" ] && [ -f "$EFISP_DIR/boot.efi" ] || {
+    emit 'AUTH_MESSAGE_ERROR=not-installed'; exit 1;
+  }
+  ensure_runtime
+  mkdir "$LOCK_DIR" 2>/dev/null || { emit 'AUTH_MESSAGE_ERROR=busy'; exit 1; }
+  auth_tmp=
+  trap '[ -z "$auth_tmp" ] || rm -f "$auth_tmp"; rmdir "$LOCK_DIR"' EXIT
+  trap 'exit 1' INT TERM HUP
+  umask 077
+  if [ -z "$auth_text" ]; then
+    rm -f "$AUTH_MESSAGE_FILE" && sync || { emit 'AUTH_MESSAGE_ERROR=io'; exit 1; }
+  else
+    auth_tmp=$(mktemp "$EFISP_DIR/.auth_message.XXXXXX") || { emit 'AUTH_MESSAGE_ERROR=io'; exit 1; }
+    if ! printf '%s' "$auth_text" > "$auth_tmp" || ! chmod 600 "$auth_tmp" ||
+       ! sync || ! mv -f "$auth_tmp" "$AUTH_MESSAGE_FILE" || ! sync; then
+      emit 'AUTH_MESSAGE_ERROR=io'; exit 1
+    fi
+    auth_tmp=
+  fi
+  emit 'AUTH_MESSAGE_SAVED=1'
 )
 
 clear_password() (
@@ -526,5 +564,7 @@ case "$1" in
   clear-log) clear_log ;;
   set-password) set_password "$2" ;;
   clear-password) clear_password ;;
+  get-auth-message) get_auth_message ;;
+  set-auth-message) set_auth_message "$2" ;;
   *) exit 1 ;;
 esac
