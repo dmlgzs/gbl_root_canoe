@@ -209,7 +209,7 @@ set_password() (
 
 get_auth_message() {
   persist_mounted && [ -f "$AUTH_MESSAGE_FILE" ] && [ ! -L "$AUTH_MESSAGE_FILE" ] || return 0
-  [ "$(wc -c < "$AUTH_MESSAGE_FILE")" -le 240 ] || return 0
+  [ "$(wc -c < "$AUTH_MESSAGE_FILE")" -le 300 ] || return 0
   cat "$AUTH_MESSAGE_FILE"
 }
 
@@ -217,7 +217,7 @@ set_auth_message() (
   auth_text=$1
   auth_bytes=$(printf '%s' "$auth_text" | wc -c)
   auth_chars=$(printf '%s' "$auth_text" | LC_ALL=C tr -d '\200-\277' | wc -c)
-  [ "$auth_bytes" -le 240 ] && [ "$auth_chars" -le 80 ] || { emit 'AUTH_MESSAGE_ERROR=invalid'; exit 1; }
+  [ "$auth_bytes" -le 300 ] && [ "$auth_chars" -le 100 ] || { emit 'AUTH_MESSAGE_ERROR=invalid'; exit 1; }
   if printf '%s' "$auth_text" | LC_ALL=C grep -q '[[:cntrl:]]'; then
     emit 'AUTH_MESSAGE_ERROR=invalid'; exit 1
   fi

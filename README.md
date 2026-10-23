@@ -97,7 +97,7 @@ Common commands include:
 
 #### Custom authentication text
 
-Use the module WebUI's custom authentication text field to save up to 80 characters below `Superfastboot Authentication`, effective next boot. Save an empty field to clear. The single-line UTF-8 file is `/mnt/vendor/persist/efisp/auth_message`, separate from credentials and preserved during module updates. Editing text does not change the password.
+Use the module WebUI's custom authentication text field to save up to 100 characters below `Superfastboot Authentication`, effective next boot. Save an empty field to clear. The single-line UTF-8 file is `/mnt/vendor/persist/efisp/auth_message`, separate from credentials and preserved during module updates. Editing text does not change the password.
 
 English and common Chinese text can be decoded; emoji, line breaks and control characters are unsupported. Chinese rendering depends on firmware fonts. This BDS bundles no Chinese font, so glyph support is not guaranteed. If the console reports unsupported glyphs, the original text is still rendered with firmware placeholders, and an English notice appears below it without affecting authentication.
 

@@ -12,7 +12,7 @@
 #define SFB_PASSWORD_PATH L"\\efisp\\menu_password"
 #define SFB_PASSWORD_ATTEMPTS 3
 #define SFB_AUTH_MESSAGE_PATH L"\\efisp\\auth_message"
-#define SFB_AUTH_MESSAGE_CHARS 80
+#define SFB_AUTH_MESSAGE_CHARS 100
 #define SFB_AUTH_MESSAGE_BYTES (SFB_AUTH_MESSAGE_CHARS * 3)
 
 /* Qualcomm's GPT-record protocol has no standalone public protocol header. */

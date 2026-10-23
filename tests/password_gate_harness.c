@@ -216,10 +216,12 @@ int main (void) {
     CHECK (SfbAuthRequest () && StrCmp (DisplayedMessage, L"Owner: test@example.com") == 0);
     CHECK (GlyphWarningDisplayed);
     {
-      UINT8 LongText[243];
+      UINT8 LongText[SFB_AUTH_MESSAGE_BYTES + 3];
       memset (LongText, 'x', sizeof (LongText));
-      CHECK (SfbDecodeAuthMessage (LongText, 80, Text) && Text[80] == 0);
-      CHECK (!SfbDecodeAuthMessage (LongText, 81, Text) && Text[0] == 0);
+      CHECK (SfbDecodeAuthMessage (LongText, 100, Text) && Text[100] == 0);
+      CHECK (!SfbDecodeAuthMessage (LongText, 101, Text) && Text[0] == 0);
+      for (UINTN Index = 0; Index < 100; Index++) memcpy (LongText + Index * 3, Chinese, 3);
+      CHECK (SfbDecodeAuthMessage (LongText, 300, Text) && Text[99] == 0x4F60 && Text[100] == 0);
       CHECK (!SfbDecodeAuthMessage (LongText, sizeof (LongText), Text));
       CHECK (!SfbDecodeAuthMessage ((CONST UINT8 *)"x", (UINTN)-1, Text));
       CHECK (!SfbDecodeAuthMessage (NULL, 1, Text));

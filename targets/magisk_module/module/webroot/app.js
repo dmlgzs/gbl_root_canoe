@@ -16,10 +16,10 @@ const i18n = {
     pageTitle: "假回锁 - BL Flasher",
     passwordTitle: "Superfastboot 密码保护",
     authMessageTitle: "密码页自定义文字",
-    authMessageHint: "最多 80 个字符，显示在 Superfastboot Authentication 下方。中文取决于固件字库，英文兼容性更好。留空保存可清除，下次开机生效。",
+    authMessageHint: "最多 100 个字符，显示在 Superfastboot Authentication 下方。中文取决于固件字库，英文兼容性更好。留空保存可清除，下次开机生效。",
     authMessageSave: "保存文字",
     authMessageSaved: "文字已保存，下次开机生效。",
-    authMessageInvalid: "请输入最多 80 个普通字符，不能包含换行、控制字符或表情符号。",
+    authMessageInvalid: "请输入最多 100 个普通字符，不能包含换行、控制字符或表情符号。",
     authMessageFailed: "文字保存失败",
     passwordHint: "设置 6–64 位数字密码后，进入 Superfastboot 需要验证；未设置密码时无需验证。未通过验证或本次开机输错三次，只能启动安卓。正常启动安卓和输入超时均无需密码。设置在下次开机生效。",
     passwordNew: "新密码",
@@ -93,10 +93,10 @@ const i18n = {
     pageTitle: "Fake Lock - BL Flasher",
     passwordTitle: "Superfastboot Password Protection",
     authMessageTitle: "Custom authentication text",
-    authMessageHint: "Up to 80 characters below Superfastboot Authentication. Chinese requires firmware font support; English is more compatible. Save empty text to clear. Effective next boot.",
+    authMessageHint: "Up to 100 characters below Superfastboot Authentication. Chinese requires firmware font support; English is more compatible. Save empty text to clear. Effective next boot.",
     authMessageSave: "Save text",
     authMessageSaved: "Text saved. Effective next boot.",
-    authMessageInvalid: "Use up to 80 normal characters, without line breaks, controls or emoji.",
+    authMessageInvalid: "Use up to 100 normal characters, without line breaks, controls or emoji.",
     authMessageFailed: "Failed to save text",
     passwordHint: "Set a 6–64 digit password to require verification before entering Superfastboot. No password means no verification. Failed verification or three errors in one boot permits only Android. Normal Android boot and input timeout need no password. Changes take effect next boot.",
     passwordNew: "New password",
@@ -491,7 +491,7 @@ function saveAuthMessage(event) {
   event.preventDefault();
   const t = i18n[state.lang];
   const message = elements.authMessageInput.value;
-  if (message.length > 80 || /[\u0000-\u001f\u007f-\u009f\u2028-\u202e\u2066-\u2069\ud800-\udfff\ufeff\ufff0-\uffff]/.test(message)) {
+  if (message.length > 100 || /[\u0000-\u001f\u007f-\u009f\u2028-\u202e\u2066-\u2069\ud800-\udfff\ufeff\ufff0-\uffff]/.test(message)) {
     elements.authMessageResult.textContent = t.authMessageInvalid;
     return;
   }
