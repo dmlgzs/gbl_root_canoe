@@ -127,7 +127,6 @@ SfbAuthRequest (VOID)
     SfbDebounceMenuExit ();
     if (Cursor < 10) {
       if (Length < SFB_PIN_MAX_DIGITS) Input[Length++] = (CHAR8)('0' + Cursor);
-      Cursor = 0;
     } else if (Cursor == 10) {
       if (Length > 0) Input[--Length] = 0;
     } else if (Cursor == 12) {

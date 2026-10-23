@@ -91,7 +91,7 @@ static void choose (UINTN Row) {
   Keys[KeyCount++] = SfbKeySelect;
 }
 static void type (const char *Pin) {
-  while (*Pin) { choose ((UINTN)(*Pin++ - '0')); TestCursor = 0; }
+  while (*Pin) { choose ((UINTN)(*Pin++ - '0')); }
 }
 static void submit (const char *Pin) { type (Pin); choose (11); TestCursor = 0; }
 #define CHECK(Condition) do { if (!(Condition)) { fprintf (stderr, "Failed at line %d: %s\n", __LINE__, #Condition); return 1; } } while (0)
@@ -122,6 +122,12 @@ int main (void) {
   CHECK (WatchdogTimeout == 300);
   SfbAuthInitialize ();
   CHECK (SfbAuthIsUnlocked ());
+  reset ("777777");
+  SfbAuthInitialize ();
+  choose (7);
+  for (UINTN Repeat = 0; Repeat < 5; Repeat++) Keys[KeyCount++] = SfbKeySelect;
+  choose (11);
+  CHECK (SfbAuthRequest ()); /* Repeated power presses keep the selected digit. */
   reset (Long);
   SfbAuthInitialize ();
   submit (Long);
